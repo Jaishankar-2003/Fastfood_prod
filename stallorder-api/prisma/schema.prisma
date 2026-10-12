@@ -1,0 +1,229 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum FoodType {
+  VEG
+  NON_VEG
+
+  @@map("food_type")
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+
+  @@map("order_status")
+}
+
+enum PaymentMethod {
+  CASH
+  RAZORPAY
+
+  @@map("payment_method")
+}
+
+enum OrderPaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  REFUND_PENDING
+  REFUNDED
+
+  @@map("order_payment_status")
+}
+
+enum PaymentAttemptStatus {
+  CREATED
+  PENDING
+  FAILED
+  PAID
+  REFUND_PENDING
+  REFUNDED
+
+  @@map("payment_attempt_status")
+}
+
+enum OrderActorType {
+  CUSTOMER
+  ADMIN
+  SYSTEM
+
+  @@map("order_actor_type")
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Admin {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  statusHistory OrderStatusHistory[]
+
+  @@map("admins")
+}
+
+model Category {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  parentId  String?  @map("parent_id") @db.Uuid
+  isEnabled Boolean  @default(true) @map("is_enabled")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Category[] @relation("CategoryTree")
+  products Product[]
+
+  @@unique([parentId, name])
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Product {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  foodType    FoodType @map("food_type")
+  imagePath   String?  @map("image_path")
+  isEnabled   Boolean  @default(true) @map("is_enabled")
+  categoryId  String   @map("category_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  category   Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  orderItems OrderItem[]
+
+  @@index([categoryId, isEnabled])
+  @@map("products")
+}
+
+model Banner {
+  id           String   @id @default(uuid()) @db.Uuid
+  title        String
+  imagePath    String   @map("image_path")
+  isEnabled    Boolean  @default(true) @map("is_enabled")
+  displayOrder Int      @default(0) @map("display_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([isEnabled, displayOrder])
+  @@map("banners")
+}
+
+model ShopSettings {
+  id        Int      @id @default(1)
+  isOpen    Boolean  @default(true) @map("is_open")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("shop_settings")
+}
+
+model OrderCounter {
+  id        Int @id @default(1)
+  nextValue Int @default(1001) @map("next_value")
+
+  @@map("order_counter")
+}
+
+model Order {
+  id                    String             @id @default(uuid()) @db.Uuid
+  orderNumber           String             @unique @map("order_number")
+  customerName          String             @map("customer_name")
+  customerPhone         String             @map("customer_phone")
+  cancellationTokenHash String?            @map("cancellation_token_hash")
+  paymentMethod         PaymentMethod      @map("payment_method")
+  status                OrderStatus        @default(CONFIRMED)
+  paymentStatus         OrderPaymentStatus @default(UNPAID) @map("payment_status")
+  subtotal              Decimal            @db.Decimal(10, 2)
+  total                 Decimal            @db.Decimal(10, 2)
+  paidAt                DateTime?          @map("paid_at")
+  cancelledAt           DateTime?          @map("cancelled_at")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
+
+  items         OrderItem[]
+  payments      PaymentAttempt[]
+  statusHistory OrderStatusHistory[]
+
+  @@index([status, createdAt])
+  @@index([paymentStatus, paidAt])
+  @@index([customerPhone, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  orderId     String  @map("order_id") @db.Uuid
+  productId   String  @map("product_id") @db.Uuid
+  productName String  @map("product_name")
+  unitPrice   Decimal @map("unit_price") @db.Decimal(10, 2)
+  quantity    Int
+  lineTotal   Decimal @map("line_total") @db.Decimal(10, 2)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model PaymentAttempt {
+  id                String               @id @default(uuid()) @db.Uuid
+  orderId           String               @map("order_id") @db.Uuid
+  status            PaymentAttemptStatus @default(CREATED)
+  amount            Decimal              @db.Decimal(10, 2)
+  currency          String               @default("INR")
+  razorpayOrderId   String?              @unique @map("razorpay_order_id")
+  razorpayPaymentId String?              @unique @map("razorpay_payment_id")
+  refundReference   String?              @map("refund_reference")
+  refundStatus      String?              @map("refund_status")
+  paidAt            DateTime?            @map("paid_at")
+  refundedAt        DateTime?            @map("refunded_at")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId, createdAt])
+  @@index([status])
+  @@map("payment_attempts")
+}
+
+model OrderStatusHistory {
+  id             String         @id @default(uuid()) @db.Uuid
+  orderId        String         @map("order_id") @db.Uuid
+  previousStatus OrderStatus?   @map("previous_status")
+  newStatus      OrderStatus    @map("new_status")
+  actorType      OrderActorType @map("actor_type")
+  adminId        String?        @map("admin_id") @db.Uuid
+  reason         String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  order Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  admin Admin? @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
